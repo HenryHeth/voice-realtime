@@ -14,6 +14,8 @@
     "@fastify/formbody": "^8.0.2",
     "@fastify/static": "^9.0.0",
     "@fastify/websocket": "^11.2.0",
+    "@picovoice/porcupine-web": "^4.0.0",
+    "@picovoice/web-voice-processor": "^4.0.9",
     "@twilio/voice-sdk": "^2.18.0",
     "dotenv": "^17.2.3",
     "fastify": "^5.7.2",

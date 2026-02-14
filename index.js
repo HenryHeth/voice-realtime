@@ -1293,9 +1293,25 @@ fastify.register(fastifyStatic, {
   decorateReply: true,
 });
 
+// COOP/COEP headers for SharedArrayBuffer (required by Porcupine WASM)
+fastify.addHook('onSend', (request, reply, payload, done) => {
+  reply.header('Cross-Origin-Opener-Policy', 'same-origin');
+  reply.header('Cross-Origin-Embedder-Policy', 'require-corp');
+  done();
+});
+
 // Root route — serve call.html
 fastify.get('/', async (request, reply) => {
   return reply.sendFile('call.html');
+});
+
+// Picovoice access key endpoint (keeps key out of client HTML)
+fastify.get('/api/picovoice-key', async (request, reply) => {
+  const key = process.env.PICOVOICE_ACCESS_KEY || '';
+  if (!key) {
+    return reply.code(404).send({ error: 'PICOVOICE_ACCESS_KEY not configured' });
+  }
+  return reply.send({ accessKey: key });
 });
 
 // Token endpoint for Twilio Client SDK (web caller)

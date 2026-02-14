@@ -8,6 +8,8 @@
   <meta name="apple-mobile-web-app-title" content="Call Henry">
   <meta name="theme-color" content="#0a0a0f">
   <title>Call Henry</title>
+  <script src="/web-voice-processor.js"></script>
+  <script src="/porcupine-web.js"></script>
   <style>
     * {
       margin: 0;
@@ -62,9 +64,23 @@
       animation: pulse-border 1.5s ease-in-out infinite;
     }
 
+    .avatar.listening {
+      border-color: #4ade80;
+      animation: pulse-listen 2.5s ease-in-out infinite;
+    }
+
+    .avatar.idle {
+      border-color: #4a4a5a;
+    }
+
     @keyframes pulse-border {
       0%, 100% { box-shadow: 0 0 20px rgba(251, 191, 36, 0.15); }
       50% { box-shadow: 0 0 40px rgba(251, 191, 36, 0.35); }
+    }
+
+    @keyframes pulse-listen {
+      0%, 100% { box-shadow: 0 0 15px rgba(74, 222, 128, 0.1); }
+      50% { box-shadow: 0 0 35px rgba(74, 222, 128, 0.25); }
     }
 
     /* Status */
@@ -80,6 +96,8 @@
     .status.connecting { color: #fbbf24; }
     .status.connected { color: #34d399; }
     .status.error { color: #f87171; }
+    .status.listening { color: #4ade80; }
+    .status.idle { color: #64748b; }
 
     /* Timer */
     .timer {
@@ -141,12 +159,49 @@
       transform: scale(0.95);
     }
 
+    .btn-call.listen {
+      background: linear-gradient(135deg, #065f46 0%, #4ade80 100%);
+      color: #fff;
+      box-shadow: 0 8px 40px rgba(74, 222, 128, 0.2);
+    }
+
+    .btn-call.listen:active {
+      transform: scale(0.95);
+    }
+
     .btn-call:disabled {
       background: #1e1e2e;
       color: #4a4a5a;
       box-shadow: none;
       cursor: not-allowed;
     }
+
+    /* Secondary button row */
+    .btn-row {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .btn-secondary {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #94a3b8;
+      padding: 0.6rem 1.2rem;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .btn-secondary:active {
+      background: rgba(255,255,255,0.15);
+      transform: scale(0.97);
+    }
+
+    .btn-secondary.hidden { display: none; }
 
     /* Error display */
     .error-msg {
@@ -232,6 +287,12 @@
     <span>Call Henry</span>
   </button>
 
+  <div class="btn-row">
+    <button class="btn-secondary hidden" id="listenBtn" onclick="toggleListening()">
+      🎙 Start Listening
+    </button>
+  </div>
+
   <div class="error-msg" id="errorMsg"></div>
 </div>
 
@@ -246,6 +307,18 @@
   let callStartTime = null;
   let isInCall = false;
 
+  // Tab suspension / wake lock state
+  let releaseLock = null;         // Web Lock API release function
+  let wakeLockSentinel = null;    // Wake Lock API sentinel
+
+  // Wake word state
+  let porcupineWorker = null;
+  let isListening = false;
+  let picovoiceAccessKey = null;
+
+  // UI mode: 'idle' | 'listening' | 'connecting' | 'connected'
+  let uiMode = 'idle';
+
   // ── DOM ──
   const statusEl = document.getElementById('status');
   const timerEl = document.getElementById('timer');
@@ -253,6 +326,7 @@
   const avatarEl = document.getElementById('avatar');
   const errorEl = document.getElementById('errorMsg');
   const audioWaveEl = document.getElementById('audioWave');
+  const listenBtn = document.getElementById('listenBtn');
 
   // ── UI Helpers ──
   function setStatus(text, state) {
@@ -266,7 +340,37 @@
     setTimeout(() => errorEl.classList.remove('visible'), 8000);
   }
 
+  function setIdleMode() {
+    uiMode = 'idle';
+    isInCall = false;
+    callBtn.className = 'btn-call call';
+    callBtn.innerHTML = '<span class="icon">📞</span><span>Call Henry</span>';
+    callBtn.disabled = false;
+    avatarEl.className = 'avatar idle';
+    audioWaveEl.classList.add('hidden');
+    timerEl.classList.add('hidden');
+    listenBtn.textContent = '🎙 Start Listening';
+    listenBtn.classList.remove('hidden');
+    stopTimer();
+  }
+
+  function setListeningMode() {
+    uiMode = 'listening';
+    isInCall = false;
+    callBtn.className = 'btn-call call';
+    callBtn.innerHTML = '<span class="icon">📞</span><span>Call Henry</span>';
+    callBtn.disabled = false;
+    avatarEl.className = 'avatar listening';
+    audioWaveEl.classList.add('hidden');
+    timerEl.classList.add('hidden');
+    listenBtn.textContent = '⏹ Stop Listening';
+    listenBtn.classList.remove('hidden');
+    stopTimer();
+    setStatus('Listening for "Hey Henry"…', 'listening');
+  }
+
   function setCallMode() {
+    uiMode = 'idle';
     isInCall = false;
     callBtn.className = 'btn-call call';
     callBtn.innerHTML = '<span class="icon">📞</span><span>Call Henry</span>';
@@ -274,10 +378,13 @@
     avatarEl.className = 'avatar';
     audioWaveEl.classList.add('hidden');
     timerEl.classList.add('hidden');
+    listenBtn.classList.remove('hidden');
+    listenBtn.textContent = isListening ? '⏹ Stop Listening' : '🎙 Start Listening';
     stopTimer();
   }
 
   function setHangupMode() {
+    uiMode = 'connected';
     isInCall = true;
     callBtn.className = 'btn-call hangup';
     callBtn.innerHTML = '<span class="icon">✕</span><span>Hang Up</span>';
@@ -285,12 +392,15 @@
     avatarEl.className = 'avatar connected';
     audioWaveEl.classList.remove('hidden');
     timerEl.classList.remove('hidden');
+    listenBtn.classList.add('hidden');
     startTimer();
   }
 
   function setConnectingMode() {
+    uiMode = 'connecting';
     callBtn.disabled = true;
     avatarEl.className = 'avatar connecting';
+    listenBtn.classList.add('hidden');
   }
 
   // ── Timer ──
@@ -312,23 +422,241 @@
     }
   }
 
-  // ── Toggle Call ──
+  // ═══════════════════════════════════════════════
+  //  TAB SUSPENSION FIXES
+  // ═══════════════════════════════════════════════
+
+  // Web Lock API — prevents tab from being frozen/suspended during call
+  async function acquireWebLock() {
+    if (!navigator.locks) return;
+    try {
+      navigator.locks.request('voice-call-active', { mode: 'exclusive' }, () => {
+        return new Promise(resolve => { releaseLock = resolve; });
+      });
+      console.log('Web Lock acquired');
+    } catch (e) {
+      console.warn('Web Lock failed:', e);
+    }
+  }
+
+  function releaseWebLock() {
+    if (releaseLock) {
+      releaseLock();
+      releaseLock = null;
+      console.log('Web Lock released');
+    }
+  }
+
+  // Wake Lock API — keeps screen from dimming during call
+  async function acquireWakeLock() {
+    if (!navigator.wakeLock) return;
+    try {
+      wakeLockSentinel = await navigator.wakeLock.request('screen');
+      wakeLockSentinel.addEventListener('release', () => {
+        console.log('Wake Lock released');
+      });
+      console.log('Wake Lock acquired');
+    } catch (e) {
+      console.warn('Wake Lock failed:', e);
+    }
+  }
+
+  async function releaseWakeLock() {
+    if (wakeLockSentinel) {
+      try { await wakeLockSentinel.release(); } catch(e) {}
+      wakeLockSentinel = null;
+    }
+  }
+
+  // Re-acquire wake lock when tab becomes visible (it's auto-released on visibility change)
+  async function reacquireWakeLockIfNeeded() {
+    if (isInCall && !wakeLockSentinel && document.visibilityState === 'visible') {
+      await acquireWakeLock();
+    }
+  }
+
+  // Visibility change handler — detect tab return, auto-reconnect if WebSocket dropped
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible') {
+      console.log('Tab became visible');
+      // Re-acquire wake lock (browsers release it on visibility change)
+      await reacquireWakeLockIfNeeded();
+
+      // Check if we were in a call but WebSocket dropped
+      if (isInCall && (!ws || ws.readyState !== WebSocket.OPEN)) {
+        console.log('WebSocket dropped while tab was hidden — reconnecting');
+        setStatus('Reconnecting…', 'connecting');
+        setConnectingMode();
+        // Clean up old state but keep isInCall true
+        cleanup(true); // true = keep isInCall flag
+        // Brief delay for cleanup, then reconnect
+        setTimeout(() => startCall(), 500);
+      }
+    }
+  });
+
+  // ═══════════════════════════════════════════════
+  //  WAKE WORD — Picovoice Porcupine
+  // ═══════════════════════════════════════════════
+
+  // Play a short chime when wake word is detected
+  function playChime() {
+    try {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.08);
+      osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+      setTimeout(() => ctx.close(), 500);
+    } catch(e) {
+      console.warn('Chime failed:', e);
+    }
+  }
+
+  // Vibrate briefly (mobile)
+  function vibrate() {
+    if (navigator.vibrate) {
+      navigator.vibrate([100, 50, 100]);
+    }
+  }
+
+  // Fetch Picovoice access key from server
+  async function fetchAccessKey() {
+    try {
+      const resp = await fetch('/api/picovoice-key');
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      return data.accessKey || null;
+    } catch(e) {
+      return null;
+    }
+  }
+
+  // Start wake word listening
+  async function startWakeWordListening() {
+    if (isListening) return;
+
+    // Get access key if we don't have it
+    if (!picovoiceAccessKey) {
+      picovoiceAccessKey = await fetchAccessKey();
+    }
+
+    if (!picovoiceAccessKey) {
+      showError('Wake word not configured. Use manual call button. (Set PICOVOICE_ACCESS_KEY in .env)');
+      return;
+    }
+
+    try {
+      setStatus('Starting wake word…', 'listening');
+
+      // Create PorcupineWorker with built-in keyword
+      // TODO: Replace 'Computer' with custom 'Hey Henry' keyword once created on Picovoice Console
+      // To create: go to https://console.picovoice.ai/ → Porcupine → Create Keyword → "Hey Henry" → Download .ppn for Web (WASM)
+      // Then use: { publicPath: '/hey-henry.ppn', label: 'Hey Henry', sensitivity: 0.65 }
+      porcupineWorker = await PorcupineWeb.PorcupineWorker.create(
+        picovoiceAccessKey,
+        [{ builtin: PorcupineWeb.BuiltInKeyword.Computer, sensitivity: 0.65 }],
+        onWakeWordDetected,
+        { publicPath: '/porcupine_params.pv', forceWrite: true }
+      );
+
+      // Subscribe to WebVoiceProcessor (handles mic + resampling to 16kHz)
+      await WebVoiceProcessor.WebVoiceProcessor.subscribe(porcupineWorker);
+
+      isListening = true;
+      setListeningMode();
+      console.log('Wake word listening active (keyword: Computer)');
+
+    } catch(e) {
+      console.error('Wake word init failed:', e);
+      showError('Wake word init failed: ' + (e.message || e));
+      setIdleMode();
+    }
+  }
+
+  // Stop wake word listening
+  async function stopWakeWordListening() {
+    if (!isListening) return;
+    try {
+      if (porcupineWorker) {
+        await WebVoiceProcessor.WebVoiceProcessor.unsubscribe(porcupineWorker);
+        await porcupineWorker.terminate();
+        porcupineWorker = null;
+      }
+    } catch(e) {
+      console.warn('Wake word cleanup error:', e);
+    }
+    isListening = false;
+    console.log('Wake word listening stopped');
+  }
+
+  // Wake word detected callback
+  function onWakeWordDetected(detection) {
+    console.log('Wake word detected:', detection.label);
+
+    // Audio + haptic feedback
+    playChime();
+    vibrate();
+
+    // Transition: stop wake word → start call
+    stopWakeWordListening().then(() => {
+      startCall(true); // true = auto-resume listening on hangup
+    });
+  }
+
+  // Toggle listening button
+  async function toggleListening() {
+    if (isListening) {
+      await stopWakeWordListening();
+      setIdleMode();
+      setStatus('Ready', 'ready');
+    } else {
+      await startWakeWordListening();
+    }
+  }
+
+  // ═══════════════════════════════════════════════
+  //  CALL LOGIC
+  // ═══════════════════════════════════════════════
+
+  // Toggle Call
   function toggleCall() {
     if (isInCall) {
       endCall();
     } else {
-      startCall();
+      startCall(isListening); // Resume listening if was listening before
     }
   }
 
-  // ── Start Call ──
-  async function startCall() {
+  // Track whether to auto-resume listening after call
+  let resumeListeningAfterCall = false;
+
+  // Start Call
+  async function startCall(autoResumeListening) {
     if (isInCall || ws) return;
+
+    resumeListeningAfterCall = !!autoResumeListening;
+
+    // Stop wake word if active (mic can't be shared)
+    if (isListening) {
+      await stopWakeWordListening();
+    }
 
     setStatus('Connecting…', 'connecting');
     setConnectingMode();
 
     try {
+      // Acquire Web Lock + Wake Lock to prevent tab suspension
+      await acquireWebLock();
+      await acquireWakeLock();
+
       // 1. Get microphone access
       micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -385,6 +713,7 @@
         cleanup();
         setStatus('Ready', 'ready');
         setCallMode();
+        maybeResumeListening();
       };
 
       ws.onclose = () => {
@@ -394,8 +723,11 @@
           setStatus('Call ended', 'ready');
           setCallMode();
           setTimeout(() => {
-            if (!isInCall) setStatus('Ready', 'ready');
-          }, 3000);
+            if (!isInCall) {
+              setStatus('Ready', 'ready');
+              maybeResumeListening();
+            }
+          }, 2000);
         }
       };
 
@@ -405,6 +737,16 @@
       cleanup();
       setStatus('Ready', 'ready');
       setCallMode();
+      maybeResumeListening();
+    }
+  }
+
+  // Resume listening after call if wake word was active before
+  async function maybeResumeListening() {
+    if (resumeListeningAfterCall) {
+      resumeListeningAfterCall = false;
+      // Small delay to let audio resources fully release
+      setTimeout(() => startWakeWordListening(), 500);
     }
   }
 
@@ -442,6 +784,7 @@
           setStatus('Call ended', 'ready');
           cleanup();
           setCallMode();
+          setTimeout(() => maybeResumeListening(), 1500);
         }
         break;
       case 'clear_audio':
@@ -470,12 +813,15 @@
     cleanup();
     setCallMode();
     setTimeout(() => {
-      if (!isInCall) setStatus('Ready', 'ready');
-    }, 2000);
+      if (!isInCall) {
+        setStatus('Ready', 'ready');
+        maybeResumeListening();
+      }
+    }, 1500);
   }
 
   // ── Cleanup ──
-  function cleanup() {
+  function cleanup(keepCallFlag) {
     // Stop mic
     if (micStream) {
       micStream.getTracks().forEach(t => t.stop());
@@ -505,6 +851,15 @@
       try { ws.close(); } catch(e) {}
       ws = null;
     }
+
+    // Release locks
+    releaseWebLock();
+    releaseWakeLock();
+
+    // Reset call flag unless told to keep it (for reconnect flow)
+    if (!keepCallFlag) {
+      isInCall = false;
+    }
   }
 
   // ── Keep-alive ping ──
@@ -513,6 +868,30 @@
       ws.send(JSON.stringify({ type: 'ping' }));
     }
   }, 25000);
+
+  // ═══════════════════════════════════════════════
+  //  INIT — Check Picovoice availability on load
+  // ═══════════════════════════════════════════════
+
+  (async function init() {
+    // Check if PorcupineWeb is available
+    if (typeof PorcupineWeb === 'undefined' || typeof WebVoiceProcessor === 'undefined') {
+      console.log('Porcupine not loaded — wake word unavailable');
+      listenBtn.classList.add('hidden');
+      setStatus('Ready', 'ready');
+      return;
+    }
+
+    // Show listen button
+    listenBtn.classList.remove('hidden');
+    setStatus('Ready', 'ready');
+
+    // Prefetch access key
+    picovoiceAccessKey = await fetchAccessKey();
+    if (!picovoiceAccessKey) {
+      console.log('No Picovoice key — wake word available but needs PICOVOICE_ACCESS_KEY in .env');
+    }
+  })();
 </script>
 
 </body>

@@ -1,24 +1,4 @@
-[dotenv@17.2.3] injecting env (13) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
-Loaded 6 call history entries
+[dotenv@17.2.3] injecting env (13) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+Loaded 10 call history entries
 Henry III Voice Server (cache-enabled) on port 6060
 WebSocket: wss://voice.heth.ca/media-stream
-Direct stream: client connected
-Direct: connected to OpenAI Realtime API
-Direct OpenAI: session.created
-Direct: system prompt 2794 chars
-Direct OpenAI: session.updated
-Direct OpenAI: response.output_audio_transcript.done
-🤖 DIRECT HENRY: Paul!
-Direct OpenAI: response.done
-Direct OpenAI: rate_limits.updated
-Direct: client disconnected
-Direct call: 8s, 1 transcript lines
-Direct transcript saved: /Users/henry_notabot/clawd/memory/voice-calls/2026-02-14T07-01-32.txt
-Direct: OpenAI disconnected (code: 1005)
-Direct summary: Generating summary...
-Summary: ACTIONS: None
-
-SUMMARY: Paul initiated a call with Henry III to discuss a topic but the rest of the details were not provided in the transcript. Further context or information was likely discussed, but specifics are not available.
-Transcript saved to /Users/henry_notabot/clawd/memory/2026-02-14.md
-Summary posted to Telegram.
-Transcript file sent to Telegram.
