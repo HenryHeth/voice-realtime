@@ -58,5 +58,23 @@
     "duration": 166,
     "caller": "direct-web",
     "transcriptLines": 29
+  },
+  {
+    "timestamp": "2026-02-14T07:53:05.827Z",
+    "duration": 15,
+    "caller": "direct-web",
+    "transcriptLines": 3
+  },
+  {
+    "timestamp": "2026-02-14T07:54:02.693Z",
+    "duration": 6,
+    "caller": "direct-web",
+    "transcriptLines": 1
+  },
+  {
+    "timestamp": "2026-02-14T07:59:06.251Z",
+    "duration": 12,
+    "caller": "direct-web",
+    "transcriptLines": 3
   }
 ]

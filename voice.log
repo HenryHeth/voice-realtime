@@ -1,4 +1,89 @@
-[dotenv@17.2.3] injecting env (13) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (14) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
 Loaded 10 call history entries
 Henry III Voice Server (cache-enabled) on port 6060
 WebSocket: wss://voice.heth.ca/media-stream
+Direct stream: client connected
+Direct: connected to OpenAI Realtime API
+Direct OpenAI: session.created
+Direct: system prompt 2794 chars
+Direct OpenAI: session.updated
+Direct OpenAI: response.output_audio_transcript.done
+🤖 DIRECT HENRY: Paul!
+Direct OpenAI: response.done
+Direct OpenAI: rate_limits.updated
+Direct OpenAI: input_audio_buffer.speech_started
+Direct OpenAI: input_audio_buffer.speech_stopped
+Direct OpenAI: input_audio_buffer.committed
+Direct OpenAI: conversation.item.input_audio_transcription.completed
+📞 DIRECT CALLER: Hey, Henry, how you doing?
+Direct OpenAI: response.output_audio_transcript.done
+🤖 DIRECT HENRY: Doing well, Paul. Ready to assist—what’s on your mind today?
+Direct OpenAI: response.done
+Direct OpenAI: rate_limits.updated
+Direct OpenAI: input_audio_buffer.speech_started
+Direct: client hung up
+Direct: client disconnected
+Direct call: 15s, 3 transcript lines
+Direct transcript saved: /Users/henry_notabot/clawd/memory/voice-calls/2026-02-14T07-52-50.txt
+Direct: OpenAI disconnected (code: 1005)
+Direct summary: Generating summary...
+Summary: ACTIONS: None
+
+SUMMARY: Paul called Henry to check in and started the conversation casually. They exchanged greetings, with Henry expressing readiness to assist Paul. No specific tasks or actions were discussed during the call.
+Transcript saved to /Users/henry_notabot/clawd/memory/2026-02-14.md
+Summary posted to Telegram.
+Transcript file sent to Telegram.
+Direct stream: client connected
+Direct: connected to OpenAI Realtime API
+Direct OpenAI: session.created
+Direct: system prompt 2794 chars
+Direct OpenAI: session.updated
+Direct OpenAI: response.output_audio_transcript.done
+🤖 DIRECT HENRY: Paul!
+Direct OpenAI: response.done
+Direct OpenAI: rate_limits.updated
+Direct OpenAI: input_audio_buffer.speech_started
+Direct: client hung up
+Direct: client disconnected
+Direct call: 6s, 1 transcript lines
+Direct transcript saved: /Users/henry_notabot/clawd/memory/voice-calls/2026-02-14T07-53-56.txt
+Direct: OpenAI disconnected (code: 1005)
+Direct summary: Generating summary...
+Summary: ACTIONS: None
+
+SUMMARY: Paul greeted Henry III at the beginning of the call. They did not discuss any specific tasks or action items during this conversation.
+Transcript saved to /Users/henry_notabot/clawd/memory/2026-02-14.md
+Summary posted to Telegram.
+Transcript file sent to Telegram.
+Direct stream: client connected
+Direct: connected to OpenAI Realtime API
+Direct OpenAI: session.created
+Direct: system prompt 2794 chars
+Direct OpenAI: session.updated
+Direct OpenAI: response.output_audio_transcript.done
+🤖 DIRECT HENRY: Paul!
+Direct OpenAI: response.done
+Direct OpenAI: rate_limits.updated
+Direct OpenAI: input_audio_buffer.speech_started
+Direct OpenAI: input_audio_buffer.speech_stopped
+Direct OpenAI: input_audio_buffer.committed
+Direct OpenAI: conversation.item.input_audio_transcription.completed
+📞 DIRECT CALLER: Henry
+Direct OpenAI: response.output_audio_transcript.done
+🤖 DIRECT HENRY: Good to hear you, Paul. How can I help today?
+Direct OpenAI: response.done
+Direct OpenAI: rate_limits.updated
+Direct OpenAI: input_audio_buffer.speech_started
+Direct: client hung up
+Direct: client disconnected
+Direct call: 12s, 3 transcript lines
+Direct transcript saved: /Users/henry_notabot/clawd/memory/voice-calls/2026-02-14T07-58-54.txt
+Direct: OpenAI disconnected (code: 1005)
+Direct summary: Generating summary...
+Summary: ACTIONS: None
+
+SUMMARY:
+Paul called Henry to discuss how he could be assisted today. The conversation had a friendly and straightforward tone.
+Transcript saved to /Users/henry_notabot/clawd/memory/2026-02-14.md
+Summary posted to Telegram.
+Transcript file sent to Telegram.

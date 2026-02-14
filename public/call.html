@@ -26,16 +26,16 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 2rem;
+      padding: 1rem;
       -webkit-font-smoothing: antialiased;
-      overflow: hidden;
+      overflow: auto;
     }
 
     .container {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 2.5rem;
+      gap: 1.5rem;
       width: 100%;
       max-width: 400px;
     }
@@ -556,13 +556,10 @@
     try {
       setStatus('Starting wake word…', 'listening');
 
-      // Create PorcupineWorker with built-in keyword
-      // TODO: Replace 'Computer' with custom 'Hey Henry' keyword once created on Picovoice Console
-      // To create: go to https://console.picovoice.ai/ → Porcupine → Create Keyword → "Hey Henry" → Download .ppn for Web (WASM)
-      // Then use: { publicPath: '/hey-henry.ppn', label: 'Hey Henry', sensitivity: 0.65 }
+      // Custom "Hey Henry" wake word trained on Picovoice Console
       porcupineWorker = await PorcupineWeb.PorcupineWorker.create(
         picovoiceAccessKey,
-        [{ builtin: PorcupineWeb.BuiltInKeyword.Computer, sensitivity: 0.65 }],
+        [{ publicPath: '/Hey-Henry_en_wasm_v4_0_0.ppn', label: 'Hey Henry', sensitivity: 0.65 }],
         onWakeWordDetected,
         { publicPath: '/porcupine_params.pv', forceWrite: true }
       );
@@ -572,7 +569,7 @@
 
       isListening = true;
       setListeningMode();
-      console.log('Wake word listening active (keyword: Computer)');
+      console.log('Wake word listening active (keyword: Hey Henry)');
 
     } catch(e) {
       console.error('Wake word init failed:', e);
