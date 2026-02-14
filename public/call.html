@@ -219,7 +219,7 @@
 <div class="container">
   <div class="avatar" id="avatar">👑</div>
   
-  <div class="status ready" id="status">Initializing…</div>
+  <div class="status ready" id="status">Ready</div>
 
   <div class="audio-wave hidden" id="audioWave">
     <span></span><span></span><span></span><span></span><span></span>
@@ -227,7 +227,7 @@
 
   <div class="timer hidden" id="timer">00:00</div>
 
-  <button class="btn-call call" id="callBtn" disabled onclick="startCall()">
+  <button class="btn-call call" id="callBtn" onclick="toggleCall()">
     <span class="icon">📞</span>
     <span>Call Henry</span>
   </button>
@@ -235,16 +235,18 @@
   <div class="error-msg" id="errorMsg"></div>
 </div>
 
-<script src="/twilio.min.js"></script>
 <script>
-  // State
-  let device = null;
-  let activeCall = null;
+  // ── State ──
+  let ws = null;
+  let audioCtx = null;
+  let micStream = null;
+  let captureNode = null;
+  let playbackNode = null;
   let timerInterval = null;
   let callStartTime = null;
-  let tokenExpiry = null;
+  let isInCall = false;
 
-  // DOM
+  // ── DOM ──
   const statusEl = document.getElementById('status');
   const timerEl = document.getElementById('timer');
   const callBtn = document.getElementById('callBtn');
@@ -252,7 +254,7 @@
   const errorEl = document.getElementById('errorMsg');
   const audioWaveEl = document.getElementById('audioWave');
 
-  // -- UI Helpers --
+  // ── UI Helpers ──
   function setStatus(text, state) {
     statusEl.textContent = text;
     statusEl.className = 'status ' + state;
@@ -265,9 +267,9 @@
   }
 
   function setCallMode() {
+    isInCall = false;
     callBtn.className = 'btn-call call';
     callBtn.innerHTML = '<span class="icon">📞</span><span>Call Henry</span>';
-    callBtn.onclick = startCall;
     callBtn.disabled = false;
     avatarEl.className = 'avatar';
     audioWaveEl.classList.add('hidden');
@@ -276,9 +278,9 @@
   }
 
   function setHangupMode() {
+    isInCall = true;
     callBtn.className = 'btn-call hangup';
     callBtn.innerHTML = '<span class="icon">✕</span><span>Hang Up</span>';
-    callBtn.onclick = endCall;
     callBtn.disabled = false;
     avatarEl.className = 'avatar connected';
     audioWaveEl.classList.remove('hidden');
@@ -291,7 +293,7 @@
     avatarEl.className = 'avatar connecting';
   }
 
-  // -- Timer --
+  // ── Timer ──
   function startTimer() {
     callStartTime = Date.now();
     timerEl.textContent = '00:00';
@@ -310,158 +312,207 @@
     }
   }
 
-  // -- Token --
-  async function fetchToken() {
-    try {
-      const resp = await fetch('/api/token');
-      if (!resp.ok) throw new Error(`Token request failed: ${resp.status}`);
-      const data = await resp.json();
-      tokenExpiry = Date.now() + (55 * 60 * 1000); // Refresh 5 min before expiry
-      return data.token;
-    } catch (err) {
-      console.error('Token fetch error:', err);
-      showError('Could not get call token. Tap to retry.');
-      throw err;
+  // ── Toggle Call ──
+  function toggleCall() {
+    if (isInCall) {
+      endCall();
+    } else {
+      startCall();
     }
   }
 
-  // -- Device Setup --
-  async function setupDevice() {
-    try {
-      const token = await fetchToken();
-      
-      device = new Twilio.Device(token, {
-        codecPreferences: ['opus', 'pcmu'],
-        enableRingingState: true,
-        logLevel: 'warn',
-      });
-
-      device.on('registered', () => {
-        console.log('Device registered');
-        setStatus('Ready', 'ready');
-        setCallMode();
-      });
-
-      device.on('error', (err) => {
-        console.error('Device error:', err);
-        showError(err.message || 'Connection error');
-        setStatus('Error — tap to retry', 'error');
-        setCallMode();
-      });
-
-      device.on('tokenWillExpire', async () => {
-        console.log('Token expiring, refreshing…');
-        try {
-          const newToken = await fetchToken();
-          device.updateToken(newToken);
-        } catch (e) {
-          console.error('Token refresh failed:', e);
-        }
-      });
-
-      await device.register();
-    } catch (err) {
-      setStatus('Tap to retry', 'error');
-      callBtn.disabled = false;
-      callBtn.onclick = () => {
-        setStatus('Initializing…', 'ready');
-        callBtn.disabled = true;
-        setupDevice();
-      };
-    }
-  }
-
-  // -- Call --
+  // ── Start Call ──
   async function startCall() {
-    if (activeCall) return;
-
-    // If token is expired, refresh device first
-    if (tokenExpiry && Date.now() > tokenExpiry) {
-      setStatus('Refreshing…', 'connecting');
-      try {
-        const newToken = await fetchToken();
-        device.updateToken(newToken);
-      } catch (e) {
-        showError('Token refresh failed. Try again.');
-        return;
-      }
-    }
+    if (isInCall || ws) return;
 
     setStatus('Connecting…', 'connecting');
     setConnectingMode();
 
     try {
-      activeCall = await device.connect();
-
-      activeCall.on('accept', () => {
-        console.log('Call accepted');
-        setStatus('Connected', 'connected');
-        setHangupMode();
+      // 1. Get microphone access
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 24000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        }
       });
 
-      activeCall.on('ringing', () => {
-        setStatus('Ringing…', 'connecting');
-      });
+      // 2. Create AudioContext at 24kHz
+      audioCtx = new AudioContext({ sampleRate: 24000 });
 
-      activeCall.on('disconnect', () => {
-        console.log('Call disconnected');
-        activeCall = null;
-        setStatus('Call ended', 'ready');
-        setCallMode();
-        // Reset status text after a moment
-        setTimeout(() => {
-          if (!activeCall) setStatus('Ready', 'ready');
-        }, 3000);
-      });
+      // If context is suspended (autoplay policy), resume on user gesture
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
 
-      activeCall.on('cancel', () => {
-        console.log('Call cancelled');
-        activeCall = null;
+      // 3. Load AudioWorklet modules
+      await audioCtx.audioWorklet.addModule('/audio-capture-processor.js');
+      await audioCtx.audioWorklet.addModule('/audio-playback-processor.js');
+
+      // 4. Open WebSocket to server
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}/direct-stream`);
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = () => {
+        console.log('WebSocket connected');
+        setupAudio();
+      };
+
+      ws.onmessage = (evt) => {
+        if (evt.data instanceof ArrayBuffer) {
+          // Binary: PCM16 audio from server → playback worklet
+          if (playbackNode) {
+            playbackNode.port.postMessage(evt.data, [evt.data]);
+          }
+        } else {
+          // JSON control message
+          try {
+            const msg = JSON.parse(evt.data);
+            handleControl(msg);
+          } catch (e) {
+            console.warn('Bad JSON from server:', e);
+          }
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.error('WebSocket error:', err);
+        showError('Connection error');
+        cleanup();
         setStatus('Ready', 'ready');
         setCallMode();
-      });
+      };
 
-      activeCall.on('reject', () => {
-        console.log('Call rejected');
-        activeCall = null;
-        setStatus('Henry is busy', 'error');
-        setCallMode();
-        setTimeout(() => {
-          if (!activeCall) setStatus('Ready', 'ready');
-        }, 5000);
-      });
-
-      activeCall.on('error', (err) => {
-        console.error('Call error:', err);
-        showError(err.message || 'Call failed');
-        activeCall = null;
-        setStatus('Ready', 'ready');
-        setCallMode();
-      });
+      ws.onclose = () => {
+        console.log('WebSocket closed');
+        cleanup();
+        if (isInCall) {
+          setStatus('Call ended', 'ready');
+          setCallMode();
+          setTimeout(() => {
+            if (!isInCall) setStatus('Ready', 'ready');
+          }, 3000);
+        }
+      };
 
     } catch (err) {
-      console.error('Connect error:', err);
+      console.error('Start call error:', err);
       showError(err.message || 'Could not start call');
-      activeCall = null;
+      cleanup();
       setStatus('Ready', 'ready');
       setCallMode();
     }
   }
 
-  function endCall() {
-    if (activeCall) {
-      activeCall.disconnect();
-      activeCall = null;
-    }
-    setStatus('Disconnecting…', 'ready');
-    setCallMode();
+  // ── Setup Audio Pipeline ──
+  function setupAudio() {
+    if (!audioCtx || !micStream || !ws) return;
+
+    // Capture: mic → AudioWorklet → WebSocket (binary PCM16)
+    const source = audioCtx.createMediaStreamSource(micStream);
+    captureNode = new AudioWorkletNode(audioCtx, 'audio-capture-processor');
+    captureNode.port.onmessage = (evt) => {
+      if (ws && ws.readyState === WebSocket.OPEN && evt.data instanceof ArrayBuffer) {
+        ws.send(evt.data);
+      }
+    };
+    source.connect(captureNode);
+    // Connect to destination to keep the graph alive (output is silent from capture node)
+    captureNode.connect(audioCtx.destination);
+
+    // Playback: WebSocket binary → AudioWorklet → speakers
+    playbackNode = new AudioWorkletNode(audioCtx, 'audio-playback-processor');
+    playbackNode.connect(audioCtx.destination);
+
+    console.log('Audio pipeline ready');
   }
 
-  // -- Init --
-  window.addEventListener('load', () => {
-    setStatus('Initializing…', 'ready');
-    setupDevice();
-  });
+  // ── Handle server control messages ──
+  function handleControl(msg) {
+    switch (msg.type) {
+      case 'status':
+        if (msg.status === 'connected') {
+          setStatus('Connected', 'connected');
+          setHangupMode();
+        } else if (msg.status === 'ended') {
+          setStatus('Call ended', 'ready');
+          cleanup();
+          setCallMode();
+        }
+        break;
+      case 'clear_audio':
+        // Barge-in: clear playback buffer
+        if (playbackNode) {
+          playbackNode.port.postMessage('clear');
+        }
+        break;
+      case 'transcript':
+        console.log(`[${msg.role}] ${msg.text}`);
+        break;
+      case 'error':
+        showError(msg.message || 'Server error');
+        break;
+      case 'pong':
+        break;
+    }
+  }
+
+  // ── End Call ──
+  function endCall() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try { ws.send(JSON.stringify({ type: 'hangup' })); } catch(e) {}
+    }
+    setStatus('Disconnecting…', 'ready');
+    cleanup();
+    setCallMode();
+    setTimeout(() => {
+      if (!isInCall) setStatus('Ready', 'ready');
+    }, 2000);
+  }
+
+  // ── Cleanup ──
+  function cleanup() {
+    // Stop mic
+    if (micStream) {
+      micStream.getTracks().forEach(t => t.stop());
+      micStream = null;
+    }
+
+    // Stop worklets
+    if (captureNode) {
+      captureNode.port.postMessage('stop');
+      try { captureNode.disconnect(); } catch(e) {}
+      captureNode = null;
+    }
+    if (playbackNode) {
+      playbackNode.port.postMessage('stop');
+      try { playbackNode.disconnect(); } catch(e) {}
+      playbackNode = null;
+    }
+
+    // Close audio context
+    if (audioCtx) {
+      audioCtx.close().catch(() => {});
+      audioCtx = null;
+    }
+
+    // Close WebSocket
+    if (ws) {
+      try { ws.close(); } catch(e) {}
+      ws = null;
+    }
+  }
+
+  // ── Keep-alive ping ──
+  setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'ping' }));
+    }
+  }, 25000);
 </script>
 
 </body>

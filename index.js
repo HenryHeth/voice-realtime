@@ -1705,6 +1705,297 @@ If they provide correct safe word, say "Identity verified, welcome!" and proceed
   });
 });
 
+// ── Direct WebSocket route (browser → server → OpenAI, no Twilio) ──────────
+fastify.register(async (fastify) => {
+  fastify.get('/direct-stream', { websocket: true }, (connection, req) => {
+    console.log('Direct stream: client connected');
+
+    // Respect activeCall lock
+    if (activeCall) {
+      console.log('Direct stream: BUSY — rejecting');
+      connection.send(JSON.stringify({ type: 'error', message: 'Henry is on another call. Try again shortly.' }));
+      connection.close();
+      return;
+    }
+
+    activeCall = { callerNumber: 'direct-web', startTime: new Date(), isWebClient: true };
+    const transcript = [];
+    const callStartTime = new Date();
+    let currentMode = 'standup';
+
+    // Send status to browser
+    const sendControl = (obj) => {
+      try { if (connection.readyState === 1) connection.send(JSON.stringify(obj)); } catch(e) {}
+    };
+    sendControl({ type: 'status', status: 'connecting' });
+
+    // Connect to OpenAI Realtime API
+    const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-realtime', {
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+    });
+
+    let isAiSpeaking = false;
+
+    // Switch conversation mode (standup <-> reflective) — same as Twilio path
+    const switchMode = (newMode) => {
+      if (newMode === currentMode) return;
+      currentMode = newMode;
+      const mode = MODES[newMode];
+      console.log(`🔄 Direct: switching to ${mode.name} mode`);
+      openAiWs.send(JSON.stringify({
+        type: 'session.update',
+        session: {
+          audio: {
+            input: {
+              turn_detection: {
+                type: 'server_vad',
+                threshold: 0.75,
+                prefix_padding_ms: 300,
+                silence_duration_ms: mode.silence_duration_ms,
+              },
+            },
+          },
+        },
+      }));
+      openAiWs.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message', role: 'user',
+          content: [{ type: 'input_text', text: `[SYSTEM] ${mode.announcement}` }],
+        },
+      }));
+      openAiWs.send(JSON.stringify({ type: 'response.create' }));
+    };
+
+    const sendSessionUpdate = () => {
+      const systemMessage = buildSystemMessage();
+      console.log(`Direct: system prompt ${systemMessage.length} chars`);
+
+      const sessionUpdate = {
+        type: 'session.update',
+        session: {
+          type: 'realtime',
+          model: 'gpt-realtime',
+          output_modalities: ['audio'],
+          audio: {
+            input: {
+              format: { type: 'audio/pcm', rate: 24000 },
+              transcription: { model: 'gpt-4o-mini-transcribe' },
+              turn_detection: {
+                type: 'server_vad',
+                threshold: 0.75,
+                prefix_padding_ms: 300,
+                silence_duration_ms: 900,
+              },
+            },
+            output: {
+              format: { type: 'audio/pcm', rate: 24000 },
+              voice: VOICE,
+            },
+          },
+          instructions: systemMessage,
+          tools: TOOLS,
+          tool_choice: 'auto',
+        },
+      };
+
+      // Direct web is behind Cloudflare Access — trusted
+      openAiWs.send(JSON.stringify(sessionUpdate));
+
+      // Initial greeting
+      openAiWs.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message', role: 'user',
+          content: [{ type: 'input_text', text: 'Greet Paul with just: "Paul!"' }],
+        },
+      }));
+      openAiWs.send(JSON.stringify({ type: 'response.create' }));
+    };
+
+    openAiWs.on('open', () => {
+      console.log('Direct: connected to OpenAI Realtime API');
+      sendControl({ type: 'status', status: 'connected' });
+      setTimeout(sendSessionUpdate, 100);
+    });
+
+    openAiWs.on('message', async (data) => {
+      try {
+        const response = JSON.parse(data);
+
+        if (LOG_EVENT_TYPES.includes(response.type)) {
+          console.log(`Direct OpenAI: ${response.type}`);
+        }
+
+        // Audio from OpenAI → decode base64 PCM16 → send as binary to browser
+        if ((response.type === 'response.audio.delta' || response.type === 'response.output_audio.delta') && response.delta) {
+          isAiSpeaking = true;
+          if (connection.readyState === 1) {
+            const pcmBuf = Buffer.from(response.delta, 'base64');
+            connection.send(pcmBuf, { binary: true });
+          }
+        }
+
+        if (response.type === 'response.done') {
+          isAiSpeaking = false;
+        }
+
+        // Barge-in: user started speaking
+        if (response.type === 'input_audio_buffer.speech_started') {
+          if (isAiSpeaking) {
+            openAiWs.send(JSON.stringify({ type: 'response.cancel' }));
+            isAiSpeaking = false;
+          }
+          // Tell browser to clear playback buffer
+          sendControl({ type: 'clear_audio' });
+        }
+
+        // Transcript — caller
+        if (response.type === 'conversation.item.input_audio_transcription.completed') {
+          console.log(`📞 DIRECT CALLER: ${response.transcript}`);
+          if (response.transcript) {
+            transcript.push(`[CALLER] ${response.transcript}`);
+            sendControl({ type: 'transcript', role: 'user', text: response.transcript });
+            const newMode = detectModeSwitch(response.transcript, currentMode);
+            if (newMode) switchMode(newMode);
+          }
+        }
+
+        // Transcript — Henry
+        if (response.type === 'response.audio_transcript.done' || response.type === 'response.output_audio_transcript.done') {
+          console.log(`🤖 DIRECT HENRY: ${response.transcript}`);
+          if (response.transcript) {
+            transcript.push(`[HENRY] ${response.transcript}`);
+            sendControl({ type: 'transcript', role: 'assistant', text: response.transcript });
+          }
+        }
+
+        // Tool calls — same as Twilio path
+        if (response.type === 'response.function_call_arguments.done') {
+          console.log(`Direct tool: ${response.name}(${response.arguments})`);
+          try {
+            const args = JSON.parse(response.arguments);
+            const result = await executeTool(response.name, args);
+            console.log(`Direct result: ${result.substring(0, 200)}`);
+            openAiWs.send(JSON.stringify({
+              type: 'conversation.item.create',
+              item: {
+                type: 'function_call_output',
+                call_id: response.call_id,
+                output: result,
+              },
+            }));
+            openAiWs.send(JSON.stringify({ type: 'response.create' }));
+          } catch (error) {
+            console.error('Direct tool error:', error.message);
+            openAiWs.send(JSON.stringify({
+              type: 'conversation.item.create',
+              item: {
+                type: 'function_call_output',
+                call_id: response.call_id,
+                output: `Error: ${error.message}`,
+              },
+            }));
+            openAiWs.send(JSON.stringify({ type: 'response.create' }));
+          }
+        }
+
+        if (response.type === 'error') {
+          console.error('Direct OpenAI ERROR:', JSON.stringify(response, null, 2));
+          sendControl({ type: 'error', message: response.error?.message || 'OpenAI error' });
+        }
+      } catch (error) {
+        console.error('Direct message processing error:', error);
+      }
+    });
+
+    openAiWs.on('close', (code) => {
+      console.log(`Direct: OpenAI disconnected (code: ${code})`);
+      sendControl({ type: 'status', status: 'ended' });
+    });
+
+    openAiWs.on('error', (error) => {
+      console.error('Direct OpenAI error:', error.message);
+      sendControl({ type: 'error', message: 'Connection to AI failed' });
+    });
+
+    // Browser messages: binary = PCM16 audio, text = JSON control
+    connection.on('message', (message, isBinary) => {
+      try {
+        if (isBinary || (message instanceof Buffer && !message.toString('utf8').startsWith('{'))) {
+          // Raw PCM16 audio from browser → base64 encode → forward to OpenAI
+          if (openAiWs.readyState === WebSocket.OPEN) {
+            const b64 = Buffer.isBuffer(message) ? message.toString('base64') : Buffer.from(message).toString('base64');
+            openAiWs.send(JSON.stringify({
+              type: 'input_audio_buffer.append',
+              audio: b64,
+            }));
+          }
+        } else {
+          // JSON control message
+          const ctrl = JSON.parse(message.toString());
+          if (ctrl.type === 'hangup') {
+            console.log('Direct: client hung up');
+            if (openAiWs.readyState === WebSocket.OPEN) openAiWs.close();
+            connection.close();
+          } else if (ctrl.type === 'ping') {
+            sendControl({ type: 'pong' });
+          }
+        }
+      } catch (error) {
+        console.error('Direct client message error:', error);
+      }
+    });
+
+    connection.on('close', () => {
+      try { if (openAiWs.readyState === WebSocket.OPEN) openAiWs.close(); } catch(e) {}
+      console.log('Direct: client disconnected');
+
+      // Record call history
+      const callEndTime = new Date();
+      const callDurationSec = Math.floor((callEndTime.getTime() - callStartTime.getTime()) / 1000);
+      callHistory.push({
+        timestamp: callEndTime.toISOString(),
+        duration: callDurationSec,
+        caller: 'direct-web',
+        transcriptLines: transcript.length,
+      });
+      saveCallHistory();
+      console.log(`Direct call: ${callDurationSec}s, ${transcript.length} transcript lines`);
+
+      activeCall = null;
+
+      // Save transcript
+      if (transcript.length > 0) {
+        try {
+          const ts = callStartTime.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          const transcriptDir = `${CLAWD_DIR}/memory/voice-calls`;
+          if (!existsSync(transcriptDir)) mkdirSync(transcriptDir, { recursive: true });
+          const transcriptFile = `${transcriptDir}/${ts}.txt`;
+          writeFileSync(transcriptFile, transcript.join('\n'));
+          console.log(`Direct transcript saved: ${transcriptFile}`);
+
+          import('child_process').then(cp => {
+            cp.exec(
+              `node scripts/summarize-call.js "${transcriptFile}"`,
+              { cwd: CLAWD_DIR, timeout: 60000 },
+              (err, stdout) => {
+                if (stdout) console.log('Direct summary:', stdout.trim());
+              }
+            );
+          });
+        } catch (e) {
+          console.error('Direct transcript save error:', e.message);
+        }
+      }
+    });
+
+    connection.on('error', (error) => {
+      console.error('Direct stream error:', error.message);
+    });
+  });
+});
+
 // Outbound call endpoint
 fastify.post('/make-call', async (request, reply) => {
   const { to } = request.body || {};
