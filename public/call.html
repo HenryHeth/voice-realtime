@@ -7,6 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Call Henry">
   <meta name="theme-color" content="#0a0a0f">
+  <link rel="manifest" href="/manifest.json">
   <title>Call Henry</title>
   <script src="/web-voice-processor.js"></script>
   <script src="/porcupine-web.js"></script>
@@ -311,6 +312,11 @@
   let releaseLock = null;         // Web Lock API release function
   let wakeLockSentinel = null;    // Wake Lock API sentinel
 
+  // Silent audio keep-alive (prevents Chrome Android from suspending background tab)
+  let keepAliveCtx = null;
+  let keepAliveOsc = null;
+  let keepAliveGain = null;
+
   // Wake word state
   let porcupineWorker = null;
   let isListening = false;
@@ -352,6 +358,7 @@
     listenBtn.textContent = '🎙 Start Listening';
     listenBtn.classList.remove('hidden');
     stopTimer();
+    stopKeepAlive(); // Stop silent audio when not listening
   }
 
   function setListeningMode() {
@@ -366,6 +373,7 @@
     listenBtn.textContent = '⏹ Stop Listening';
     listenBtn.classList.remove('hidden');
     stopTimer();
+    startKeepAlive(); // Prevent tab suspension while listening
     setStatus('Listening for "Hey Henry"…', 'listening');
   }
 
@@ -465,6 +473,35 @@
     if (wakeLockSentinel) {
       try { await wakeLockSentinel.release(); } catch(e) {}
       wakeLockSentinel = null;
+    }
+  }
+
+  // Silent audio keep-alive — plays nearly inaudible tone to prevent tab suspension
+  function startKeepAlive() {
+    if (keepAliveCtx) return; // already running
+    try {
+      keepAliveCtx = new AudioContext();
+      keepAliveOsc = keepAliveCtx.createOscillator();
+      keepAliveGain = keepAliveCtx.createGain();
+      keepAliveOsc.type = 'sine';
+      keepAliveOsc.frequency.value = 1; // 1 Hz — inaudible
+      keepAliveGain.gain.value = 0.001; // nearly silent
+      keepAliveOsc.connect(keepAliveGain).connect(keepAliveCtx.destination);
+      keepAliveOsc.start();
+      console.log('Keep-alive audio started');
+    } catch(e) {
+      console.warn('Keep-alive start failed:', e);
+    }
+  }
+
+  function stopKeepAlive() {
+    try {
+      if (keepAliveOsc) { keepAliveOsc.stop(); keepAliveOsc = null; }
+      if (keepAliveGain) { keepAliveGain.disconnect(); keepAliveGain = null; }
+      if (keepAliveCtx) { keepAliveCtx.close(); keepAliveCtx = null; }
+      console.log('Keep-alive audio stopped');
+    } catch(e) {
+      console.warn('Keep-alive stop failed:', e);
     }
   }
 
@@ -871,6 +908,13 @@
   // ═══════════════════════════════════════════════
 
   (async function init() {
+    // Register service worker for PWA install
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').then(() => {
+        console.log('Service worker registered');
+      }).catch(e => console.warn('SW registration failed:', e));
+    }
+
     // Check if PorcupineWeb is available
     if (typeof PorcupineWeb === 'undefined' || typeof WebVoiceProcessor === 'undefined') {
       console.log('Porcupine not loaded — wake word unavailable');
@@ -887,6 +931,18 @@
     picovoiceAccessKey = await fetchAccessKey();
     if (!picovoiceAccessKey) {
       console.log('No Picovoice key — wake word available but needs PICOVOICE_ACCESS_KEY in .env');
+      return;
+    }
+
+    // Auto-start listening if mic permission already granted
+    try {
+      const permResult = await navigator.permissions.query({ name: 'microphone' });
+      if (permResult.state === 'granted') {
+        console.log('Mic permission already granted — auto-starting wake word');
+        toggleListening();
+      }
+    } catch(e) {
+      console.log('Permission query not supported — manual start required');
     }
   })();
 </script>
