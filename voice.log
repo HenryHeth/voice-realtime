@@ -1,4 +1,4 @@
-[dotenv@17.2.3] injecting env (14) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (14) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
 Loaded 19 call history entries
 Henry III Voice Server (cache-enabled) on port 6060
 WebSocket: wss://voice.heth.ca/media-stream

@@ -242,7 +242,7 @@ const TOOLS = [
   {
     type: 'function',
     name: 'mark_obsolete',
-    description: 'Mark a task as obsolete/done. Completes the task and tags it "obsolete". Use for DELETE decisions in triage. LIVE API.',
+    description: 'Tag a task as obsolete (DELETE decision in triage). Adds "obsolete" + triaged tag but does NOT complete/close the task — Paul handles actual deletions. LIVE API.',
     parameters: {
       type: 'object',
       properties: {
@@ -707,9 +707,8 @@ async function executeTool(name, args) {
         const { task_id, reason } = args;
         try {
           const triageDate = new Date().toISOString().slice(5, 10).replace('-', '');
-          const completed = Math.floor(Date.now() / 1000);
           
-          // Use safe client to complete task and add obsolete tag
+          // Tag as obsolete + triaged — do NOT complete (Paul handles deletions)
           const safeEditCmd = `node -e "
             const s = require('./scripts/toodledo_safe_client.js');
             (async () => {
@@ -718,13 +717,13 @@ async function executeTool(name, args) {
               const newTags = ['obsolete', 'triaged-${triageDate}'];
               const allTags = [...new Set([...existingTags, ...newTags])];
               const newTag = allTags.join(', ');
-              const result = await s.safeEditTask(${task_id}, { completed: ${completed}, tag: newTag }, 'VoiceHenry');
+              const result = await s.safeEditTask(${task_id}, { tag: newTag }, 'VoiceHenry');
               console.log(JSON.stringify(result));
             })();
           "`;
           execSync(safeEditCmd, { cwd: CLAWD_DIR, timeout: 15000, encoding: 'utf8' });
           
-          return `Task ${task_id} marked obsolete and completed.`;
+          return `Task ${task_id} tagged obsolete (not completed — Paul handles deletions).`;
         } catch (e) {
           console.log('Mark obsolete error:', e.message);
           return `Could not mark task obsolete: ${e.message}`;
