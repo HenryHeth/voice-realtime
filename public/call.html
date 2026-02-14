@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Call Henry">
+  <meta name="theme-color" content="#0a0a0f">
+  <title>Call Henry</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+      background: #0a0a0f;
+      color: #e8e8ed;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2.5rem;
+      width: 100%;
+      max-width: 400px;
+    }
+
+    /* Avatar / Icon */
+    .avatar {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3rem;
+      border: 3px solid #2a2a3e;
+      transition: all 0.5s ease;
+    }
+
+    .avatar.connected {
+      border-color: #34d399;
+      box-shadow: 0 0 40px rgba(52, 211, 153, 0.25);
+    }
+
+    .avatar.connecting {
+      border-color: #fbbf24;
+      animation: pulse-border 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse-border {
+      0%, 100% { box-shadow: 0 0 20px rgba(251, 191, 36, 0.15); }
+      50% { box-shadow: 0 0 40px rgba(251, 191, 36, 0.35); }
+    }
+
+    /* Status */
+    .status {
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-align: center;
+      min-height: 2.5rem;
+    }
+
+    .status.ready { color: #94a3b8; }
+    .status.connecting { color: #fbbf24; }
+    .status.connected { color: #34d399; }
+    .status.error { color: #f87171; }
+
+    /* Timer */
+    .timer {
+      font-size: 3rem;
+      font-weight: 300;
+      font-variant-numeric: tabular-nums;
+      color: #e2e8f0;
+      letter-spacing: 0.05em;
+      min-height: 4rem;
+      display: flex;
+      align-items: center;
+    }
+
+    .timer.hidden { visibility: hidden; }
+
+    /* Buttons */
+    .btn-call {
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      font-size: 1.3rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      transition: all 0.3s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .btn-call .icon {
+      font-size: 2.5rem;
+    }
+
+    .btn-call.call {
+      background: linear-gradient(135deg, #059669 0%, #34d399 100%);
+      color: #fff;
+      box-shadow: 0 8px 40px rgba(52, 211, 153, 0.3);
+    }
+
+    .btn-call.call:active {
+      transform: scale(0.95);
+      box-shadow: 0 4px 20px rgba(52, 211, 153, 0.4);
+    }
+
+    .btn-call.hangup {
+      background: linear-gradient(135deg, #dc2626 0%, #f87171 100%);
+      color: #fff;
+      box-shadow: 0 8px 40px rgba(248, 113, 113, 0.3);
+    }
+
+    .btn-call.hangup:active {
+      transform: scale(0.95);
+    }
+
+    .btn-call:disabled {
+      background: #1e1e2e;
+      color: #4a4a5a;
+      box-shadow: none;
+      cursor: not-allowed;
+    }
+
+    /* Error display */
+    .error-msg {
+      background: rgba(248, 113, 113, 0.1);
+      border: 1px solid rgba(248, 113, 113, 0.3);
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      font-size: 1.1rem;
+      color: #fca5a5;
+      text-align: center;
+      max-width: 100%;
+      display: none;
+      line-height: 1.4;
+    }
+
+    .error-msg.visible { display: block; }
+
+    /* Loading spinner */
+    .spinner {
+      display: inline-block;
+      width: 1.2em;
+      height: 1.2em;
+      border: 3px solid rgba(251, 191, 36, 0.3);
+      border-top: 3px solid #fbbf24;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 0.5rem;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Audio wave animation when connected */
+    .audio-wave {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      height: 30px;
+      margin-top: -0.5rem;
+    }
+
+    .audio-wave.hidden { display: none; }
+
+    .audio-wave span {
+      width: 4px;
+      border-radius: 2px;
+      background: #34d399;
+      animation: wave 1.2s ease-in-out infinite;
+    }
+
+    .audio-wave span:nth-child(1) { height: 10px; animation-delay: 0s; }
+    .audio-wave span:nth-child(2) { height: 20px; animation-delay: 0.1s; }
+    .audio-wave span:nth-child(3) { height: 15px; animation-delay: 0.2s; }
+    .audio-wave span:nth-child(4) { height: 25px; animation-delay: 0.3s; }
+    .audio-wave span:nth-child(5) { height: 12px; animation-delay: 0.4s; }
+
+    @keyframes wave {
+      0%, 100% { transform: scaleY(0.5); }
+      50% { transform: scaleY(1.5); }
+    }
+
+    /* Prevent pull-to-refresh on mobile */
+    html { overscroll-behavior: none; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="avatar" id="avatar">👑</div>
+  
+  <div class="status ready" id="status">Initializing…</div>
+
+  <div class="audio-wave hidden" id="audioWave">
+    <span></span><span></span><span></span><span></span><span></span>
+  </div>
+
+  <div class="timer hidden" id="timer">00:00</div>
+
+  <button class="btn-call call" id="callBtn" disabled onclick="startCall()">
+    <span class="icon">📞</span>
+    <span>Call Henry</span>
+  </button>
+
+  <div class="error-msg" id="errorMsg"></div>
+</div>
+
+<script src="/twilio.min.js"></script>
+<script>
+  // State
+  let device = null;
+  let activeCall = null;
+  let timerInterval = null;
+  let callStartTime = null;
+  let tokenExpiry = null;
+
+  // DOM
+  const statusEl = document.getElementById('status');
+  const timerEl = document.getElementById('timer');
+  const callBtn = document.getElementById('callBtn');
+  const avatarEl = document.getElementById('avatar');
+  const errorEl = document.getElementById('errorMsg');
+  const audioWaveEl = document.getElementById('audioWave');
+
+  // -- UI Helpers --
+  function setStatus(text, state) {
+    statusEl.textContent = text;
+    statusEl.className = 'status ' + state;
+  }
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.classList.add('visible');
+    setTimeout(() => errorEl.classList.remove('visible'), 8000);
+  }
+
+  function setCallMode() {
+    callBtn.className = 'btn-call call';
+    callBtn.innerHTML = '<span class="icon">📞</span><span>Call Henry</span>';
+    callBtn.onclick = startCall;
+    callBtn.disabled = false;
+    avatarEl.className = 'avatar';
+    audioWaveEl.classList.add('hidden');
+    timerEl.classList.add('hidden');
+    stopTimer();
+  }
+
+  function setHangupMode() {
+    callBtn.className = 'btn-call hangup';
+    callBtn.innerHTML = '<span class="icon">✕</span><span>Hang Up</span>';
+    callBtn.onclick = endCall;
+    callBtn.disabled = false;
+    avatarEl.className = 'avatar connected';
+    audioWaveEl.classList.remove('hidden');
+    timerEl.classList.remove('hidden');
+    startTimer();
+  }
+
+  function setConnectingMode() {
+    callBtn.disabled = true;
+    avatarEl.className = 'avatar connecting';
+  }
+
+  // -- Timer --
+  function startTimer() {
+    callStartTime = Date.now();
+    timerEl.textContent = '00:00';
+    timerInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
+      const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+      const s = String(elapsed % 60).padStart(2, '0');
+      timerEl.textContent = `${m}:${s}`;
+    }, 1000);
+  }
+
+  function stopTimer() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+  }
+
+  // -- Token --
+  async function fetchToken() {
+    try {
+      const resp = await fetch('/api/token');
+      if (!resp.ok) throw new Error(`Token request failed: ${resp.status}`);
+      const data = await resp.json();
+      tokenExpiry = Date.now() + (55 * 60 * 1000); // Refresh 5 min before expiry
+      return data.token;
+    } catch (err) {
+      console.error('Token fetch error:', err);
+      showError('Could not get call token. Tap to retry.');
+      throw err;
+    }
+  }
+
+  // -- Device Setup --
+  async function setupDevice() {
+    try {
+      const token = await fetchToken();
+      
+      device = new Twilio.Device(token, {
+        codecPreferences: ['opus', 'pcmu'],
+        enableRingingState: true,
+        logLevel: 'warn',
+      });
+
+      device.on('registered', () => {
+        console.log('Device registered');
+        setStatus('Ready', 'ready');
+        setCallMode();
+      });
+
+      device.on('error', (err) => {
+        console.error('Device error:', err);
+        showError(err.message || 'Connection error');
+        setStatus('Error — tap to retry', 'error');
+        setCallMode();
+      });
+
+      device.on('tokenWillExpire', async () => {
+        console.log('Token expiring, refreshing…');
+        try {
+          const newToken = await fetchToken();
+          device.updateToken(newToken);
+        } catch (e) {
+          console.error('Token refresh failed:', e);
+        }
+      });
+
+      await device.register();
+    } catch (err) {
+      setStatus('Tap to retry', 'error');
+      callBtn.disabled = false;
+      callBtn.onclick = () => {
+        setStatus('Initializing…', 'ready');
+        callBtn.disabled = true;
+        setupDevice();
+      };
+    }
+  }
+
+  // -- Call --
+  async function startCall() {
+    if (activeCall) return;
+
+    // If token is expired, refresh device first
+    if (tokenExpiry && Date.now() > tokenExpiry) {
+      setStatus('Refreshing…', 'connecting');
+      try {
+        const newToken = await fetchToken();
+        device.updateToken(newToken);
+      } catch (e) {
+        showError('Token refresh failed. Try again.');
+        return;
+      }
+    }
+
+    setStatus('Connecting…', 'connecting');
+    setConnectingMode();
+
+    try {
+      activeCall = await device.connect();
+
+      activeCall.on('accept', () => {
+        console.log('Call accepted');
+        setStatus('Connected', 'connected');
+        setHangupMode();
+      });
+
+      activeCall.on('ringing', () => {
+        setStatus('Ringing…', 'connecting');
+      });
+
+      activeCall.on('disconnect', () => {
+        console.log('Call disconnected');
+        activeCall = null;
+        setStatus('Call ended', 'ready');
+        setCallMode();
+        // Reset status text after a moment
+        setTimeout(() => {
+          if (!activeCall) setStatus('Ready', 'ready');
+        }, 3000);
+      });
+
+      activeCall.on('cancel', () => {
+        console.log('Call cancelled');
+        activeCall = null;
+        setStatus('Ready', 'ready');
+        setCallMode();
+      });
+
+      activeCall.on('reject', () => {
+        console.log('Call rejected');
+        activeCall = null;
+        setStatus('Henry is busy', 'error');
+        setCallMode();
+        setTimeout(() => {
+          if (!activeCall) setStatus('Ready', 'ready');
+        }, 5000);
+      });
+
+      activeCall.on('error', (err) => {
+        console.error('Call error:', err);
+        showError(err.message || 'Call failed');
+        activeCall = null;
+        setStatus('Ready', 'ready');
+        setCallMode();
+      });
+
+    } catch (err) {
+      console.error('Connect error:', err);
+      showError(err.message || 'Could not start call');
+      activeCall = null;
+      setStatus('Ready', 'ready');
+      setCallMode();
+    }
+  }
+
+  function endCall() {
+    if (activeCall) {
+      activeCall.disconnect();
+      activeCall = null;
+    }
+    setStatus('Disconnecting…', 'ready');
+    setCallMode();
+  }
+
+  // -- Init --
+  window.addEventListener('load', () => {
+    setStatus('Initializing…', 'ready');
+    setupDevice();
+  });
+</script>
+
+</body>
+</html>

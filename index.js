@@ -3,9 +3,12 @@ import WebSocket from 'ws';
 import dotenv from 'dotenv';
 import fastifyFormBody from '@fastify/formbody';
 import fastifyWs from '@fastify/websocket';
+import fastifyStatic from '@fastify/static';
 import twilio from 'twilio';
 import { execSync } from 'child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 dotenv.config({ override: true });
 
@@ -1218,6 +1221,33 @@ async function executeTool(name, args) {
 }
 
 const PORT = process.env.PORT || 6060;
+const CALL_HISTORY_PATH = `${CLAWD_DIR}/voice-realtime/call-history.json`;
+
+// ── Call History (persisted to disk) ─────────────────
+let callHistory = [];
+try {
+  if (existsSync(CALL_HISTORY_PATH)) {
+    callHistory = JSON.parse(readFileSync(CALL_HISTORY_PATH, 'utf8'));
+    console.log(`Loaded ${callHistory.length} call history entries`);
+  }
+} catch (e) {
+  console.log('Call history load error:', e.message);
+  callHistory = [];
+}
+
+function saveCallHistory() {
+  try {
+    // Keep last 500 entries max
+    if (callHistory.length > 500) {
+      callHistory = callHistory.slice(-500);
+    }
+    writeFileSync(CALL_HISTORY_PATH, JSON.stringify(callHistory, null, 2));
+  } catch (e) {
+    console.error('Call history save error:', e.message);
+  }
+}
+
+const serverStartTime = Date.now();
 
 // Prevent crashes
 process.on('uncaughtException', (err) => {
@@ -1255,29 +1285,86 @@ const fastify = Fastify();
 fastify.register(fastifyFormBody);
 fastify.register(fastifyWs);
 
-// Root route
+// Static file serving for web caller UI
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+fastify.register(fastifyStatic, {
+  root: path.join(__dirname, 'public'),
+  prefix: '/',
+  decorateReply: true,
+});
+
+// Root route — serve call.html
 fastify.get('/', async (request, reply) => {
-  reply.send({ message: 'Henry III Voice Server (cache-enabled) running!' });
+  return reply.sendFile('call.html');
+});
+
+// Token endpoint for Twilio Client SDK (web caller)
+fastify.get('/api/token', async (request, reply) => {
+  const AccessToken = twilio.jwt.AccessToken;
+  const VoiceGrant = AccessToken.VoiceGrant;
+
+  const token = new AccessToken(
+    TWILIO_ACCOUNT_SID,
+    process.env.TWILIO_API_KEY_SID,
+    process.env.TWILIO_API_KEY_SECRET,
+    { identity: 'paul-web', ttl: 3600 }
+  );
+
+  const voiceGrant = new VoiceGrant({
+    outgoingApplicationSid: process.env.TWILIO_TWIML_APP_SID,
+    incomingAllow: false,
+  });
+  token.addGrant(voiceGrant);
+
+  reply.send({ token: token.toJwt() });
+});
+
+// Status endpoint for Mission Control dashboard
+fastify.get('/status', async (request, reply) => {
+  const now = Date.now();
+  const oneDayAgo = now - 24 * 60 * 60 * 1000;
+  const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+
+  const callsLast24h = callHistory.filter(c => new Date(c.timestamp).getTime() > oneDayAgo).length;
+  const callsLast7d = callHistory.filter(c => new Date(c.timestamp).getTime() > sevenDaysAgo).length;
+
+  const lastCall = callHistory.length > 0 ? callHistory[callHistory.length - 1] : null;
+
+  reply.send({
+    status: 'online',
+    activeCalls: activeCall ? 1 : 0,
+    activeCall: activeCall ? {
+      caller: activeCall.callerNumber,
+      startTime: activeCall.startTime.toISOString(),
+      duration: Math.floor((now - activeCall.startTime.getTime()) / 1000)
+    } : null,
+    lastCall: lastCall || null,
+    callsLast24h,
+    callsLast7d,
+    totalCalls: callHistory.length,
+    uptime: Math.floor((now - serverStartTime) / 1000)
+  });
 });
 
 // Active call tracking
 let activeCall = null;
 let latestCallerNumber = 'unknown';
 
-// Safety: auto-release stale calls after 30 minutes
+// Safety: auto-release stale calls after 2 minutes (if no WebSocket stream opened)
 function releaseStaleCall() {
-  if (activeCall && (Date.now() - activeCall.startTime.getTime() > 30 * 60 * 1000)) {
-    console.log(`STALE CALL: Auto-releasing after 30min`);
+  if (activeCall && (Date.now() - activeCall.startTime.getTime() > 2 * 60 * 1000)) {
+    console.log(`STALE CALL: Auto-releasing after 2min`);
     activeCall = null;
   }
 }
-setInterval(releaseStaleCall, 60 * 1000);
+setInterval(releaseStaleCall, 10 * 1000);
 
 // Twilio incoming call webhook
 fastify.all('/incoming-call', async (request, reply) => {
   const callerNumber = request.body?.From || request.query?.From || 'unknown';
+  const isWebClient = callerNumber.startsWith('client:');
   latestCallerNumber = callerNumber;
-  console.log(`Incoming call from: ${callerNumber}`);
+  console.log(`Incoming call from: ${callerNumber}${isWebClient ? ' (web client)' : ''}`);
 
   if (activeCall) {
     console.log(`BUSY: Rejecting call — active call in progress`);
@@ -1290,7 +1377,7 @@ fastify.all('/incoming-call', async (request, reply) => {
     return;
   }
 
-  activeCall = { callerNumber, startTime: new Date() };
+  activeCall = { callerNumber, startTime: new Date(), isWebClient };
   console.log(`Call accepted from: ${callerNumber}`);
 
   const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
@@ -1394,7 +1481,9 @@ fastify.register(async (fastify) => {
       const PAUL_NUMBER = process.env.PAUL_PHONE || '+16045551234';
       const safeWord = process.env.SAFE_WORD || '';
       const callerInfo = connection.callerNumber || latestCallerNumber || 'unknown';
-      const isKnownCaller = callerInfo === PAUL_NUMBER && callerInfo !== 'unknown';
+      const isWebClient = callerInfo.startsWith('client:');
+      // Trust web clients — they're behind Cloudflare Zero Trust (paul@heth.ca only)
+      const isKnownCaller = (callerInfo === PAUL_NUMBER && callerInfo !== 'unknown') || isWebClient;
       
       if (!isKnownCaller) {
         // LOCKDOWN for unknown callers
@@ -1568,6 +1657,20 @@ If they provide correct safe word, say "Identity verified, welcome!" and proceed
         if (openAiWs.readyState === WebSocket.OPEN) openAiWs.close();
       } catch (e) {}
       console.log('Client disconnected');
+
+      // Record call in history
+      const callEndTime = new Date();
+      const callDurationSec = Math.floor((callEndTime.getTime() - callStartTime.getTime()) / 1000);
+      const callerNum = connection.callerNumber || latestCallerNumber || 'unknown';
+      callHistory.push({
+        timestamp: callEndTime.toISOString(),
+        duration: callDurationSec,
+        caller: callerNum,
+        transcriptLines: transcript.length
+      });
+      saveCallHistory();
+      console.log(`Call recorded: ${callerNum}, ${callDurationSec}s, ${transcript.length} lines`);
+
       activeCall = null;
 
       // Save transcript

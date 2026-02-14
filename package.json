@@ -12,7 +12,9 @@
   "type": "module",
   "dependencies": {
     "@fastify/formbody": "^8.0.2",
+    "@fastify/static": "^9.0.0",
     "@fastify/websocket": "^11.2.0",
+    "@twilio/voice-sdk": "^2.18.0",
     "dotenv": "^17.2.3",
     "fastify": "^5.7.2",
     "twilio": "^5.12.0",

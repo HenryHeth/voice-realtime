@@ -1,0 +1,20 @@
+[
+  {
+    "timestamp": "2026-02-14T00:56:56.063Z",
+    "duration": 24,
+    "caller": "+16047637285",
+    "transcriptLines": 5
+  },
+  {
+    "timestamp": "2026-02-14T06:46:45.115Z",
+    "duration": 38,
+    "caller": "+16047637285",
+    "transcriptLines": 10
+  },
+  {
+    "timestamp": "2026-02-14T06:49:21.348Z",
+    "duration": 116,
+    "caller": "client:paul-web",
+    "transcriptLines": 31
+  }
+]
