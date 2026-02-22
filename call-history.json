@@ -130,5 +130,35 @@
     "duration": 201,
     "caller": "direct-web",
     "transcriptLines": 40
+  },
+  {
+    "timestamp": "2026-02-22T07:21:40.608Z",
+    "duration": 252,
+    "caller": "direct-web",
+    "transcriptLines": 33
+  },
+  {
+    "timestamp": "2026-02-22T07:29:00.044Z",
+    "duration": 18,
+    "caller": "direct-web",
+    "transcriptLines": 0
+  },
+  {
+    "timestamp": "2026-02-22T07:29:14.652Z",
+    "duration": 12,
+    "caller": "direct-web",
+    "transcriptLines": 0
+  },
+  {
+    "timestamp": "2026-02-22T07:30:07.689Z",
+    "duration": 31,
+    "caller": "direct-web",
+    "transcriptLines": 0
+  },
+  {
+    "timestamp": "2026-02-22T07:31:02.519Z",
+    "duration": 9,
+    "caller": "direct-web",
+    "transcriptLines": 0
   }
 ]

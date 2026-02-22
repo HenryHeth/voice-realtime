@@ -5,28 +5,19 @@ Run: `node scripts/triage-tasks.js`
 
 ## The 5 D's — Decision Options:
 
-| Decision | What It Means |
-|----------|---------------|
-| **DO IT** | Schedule it this sprint, commit to doing it |
-| **DELEGATE** | Assign to Henry or someone else |
-| **DEFER** | Push to someday/maybe, remove date |
-| **DELETE** | Kill it, no longer relevant |
-| **DETAIL** | Need more info, read the full note |
+| Decision | What It Means | Tag Changes |
+|----------|---------------|-------------|
+| **DO IT** | Schedule it this sprint, commit to doing it | Add `triaged-MMDD` |
+| **DELEGATE** | Assign to Henry or someone else | Add `triaged-MMDD` |
+| **DEFER** | No sure when it will be done - push to "someday" tag, remove date | REMOVE `standby`tag, ADD `triaged-MMDD` |
+| **DELETE** | Based on Pauls instruction mark with either "delete" tag, or 'obsolete" tag | Do not delete - Paul will delete | ADD `triaged-MMDD` tag |
+| **DETAIL** | Need more info, read the full tag title and if wanted the beginning of the note | Then ask about the options again
 
-## DEFER (Someday) Criteria:
+### ⚠️ VALID TAGS ONLY
+The only valid triage tags are: `someday`, `obsolete`, `triaged-MMDD`
+There is NO "deferred" tag. DEFER = add `someday` tag.
+When adding `someday`, ALWAYS remove `standby` if present.
 
-Based on GTD & PARA methodology research:
-
-**Move to Someday when:**
-- No urgency — no deadline, no one waiting
-- Not aligned with current VVO/priorities  
-- Nice-to-have but not essential
-- Blocked externally — can't act until something else happens
-
-**DELETE instead if:**
-- Triggers guilt, not excitement
-- You've mentally declined it 3+ times
-- Can't remember why you added it
 
 **Prevent Someday Graveyard:**
 - **Joy Test** — excitement = keep, dread = delete
@@ -54,3 +45,4 @@ Based on GTD & PARA methodology research:
 4. Ask: "Do it, delegate, defer, delete, or need detail?"
 5. Execute the decision immediately
 6. Move to next task
+**vary speed based on need. Generally move quickly, unless Paul is thinking, then slow down in those moments.

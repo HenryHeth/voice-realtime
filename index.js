@@ -128,7 +128,7 @@ Then ask: "Do it, delegate, defer, delete, or need detail?"
 THE 5 D's:
 • DO IT → Use schedule_task to set a due date (commits to this sprint)
 • DELEGATE → Use delegate_task to assign to Henry (overnight processing)
-• DEFER → Use defer_task to move to Someday (removes date, tags Deferred)
+• DEFER → Use defer_task to move to Someday (removes date, removes standby tag, adds someday tag)
 • DELETE → Use mark_obsolete to complete and tag as obsolete
 • DETAIL → Use get_task to read the full note
 
@@ -676,8 +676,8 @@ async function executeTool(name, args) {
             const s = require('./scripts/toodledo_safe_client.js');
             (async () => {
               const task = await s.getTask(${task_id});
-              const existingTags = (task.tag || '').split(',').map(t => t.trim()).filter(Boolean);
-              const newTags = ['Deferred', 'triaged-${triageDate}'];
+              const existingTags = (task.tag || '').split(',').map(t => t.trim()).filter(t => t && t.toLowerCase() !== 'standby');
+              const newTags = ['someday', 'triaged-${triageDate}'];
               const allTags = [...new Set([...existingTags, ...newTags])];
               const newTag = allTags.join(', ');
               const result = await s.safeEditTask(${task_id}, { duedate: 0, tag: newTag }, 'VoiceHenry');
@@ -695,7 +695,7 @@ async function executeTool(name, args) {
             );
           }
           
-          return `Task ${task_id} deferred to Someday. Due date removed, tagged "Deferred".`;
+          return `Task ${task_id} deferred to Someday. Due date removed, standby tag removed, tagged someday.`;
         } catch (e) {
           console.log('Defer task error:', e.message);
           return `Could not defer task: ${e.message}`;
