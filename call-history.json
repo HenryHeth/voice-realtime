@@ -160,5 +160,77 @@
     "duration": 9,
     "caller": "direct-web",
     "transcriptLines": 0
+  },
+  {
+    "timestamp": "2026-02-22T16:37:25.509Z",
+    "duration": 24,
+    "caller": "direct-web",
+    "transcriptLines": 0
+  },
+  {
+    "timestamp": "2026-02-22T16:37:39.197Z",
+    "duration": 3,
+    "caller": "direct-web",
+    "transcriptLines": 0
+  },
+  {
+    "timestamp": "2026-02-22T16:38:28.265Z",
+    "duration": 19,
+    "caller": "+16047637285",
+    "transcriptLines": 0
+  },
+  {
+    "timestamp": "2026-02-22T22:24:19.608Z",
+    "duration": 12,
+    "caller": "direct-web",
+    "transcriptLines": 0
+  },
+  {
+    "timestamp": "2026-02-22T22:28:27.715Z",
+    "duration": 14,
+    "caller": "direct-web",
+    "transcriptLines": 0
+  },
+  {
+    "timestamp": "2026-02-22T22:32:26.058Z",
+    "duration": 14,
+    "caller": "direct-web",
+    "transcriptLines": 0
+  },
+  {
+    "timestamp": "2026-02-22T22:35:42.206Z",
+    "duration": 15,
+    "caller": "direct-web",
+    "transcriptLines": 0
+  },
+  {
+    "timestamp": "2026-02-22T22:39:23.528Z",
+    "duration": 15,
+    "caller": "direct-web",
+    "transcriptLines": 4
+  },
+  {
+    "timestamp": "2026-02-22T22:44:35.479Z",
+    "duration": 234,
+    "caller": "direct-web",
+    "transcriptLines": 33
+  },
+  {
+    "timestamp": "2026-02-23T00:00:44.914Z",
+    "duration": 482,
+    "caller": "direct-web",
+    "transcriptLines": 62
+  },
+  {
+    "timestamp": "2026-02-23T00:06:43.631Z",
+    "duration": 6,
+    "caller": "direct-web",
+    "transcriptLines": 1
+  },
+  {
+    "timestamp": "2026-02-23T00:07:30.441Z",
+    "duration": 400,
+    "caller": "direct-web",
+    "transcriptLines": 29
   }
 ]

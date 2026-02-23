@@ -1545,6 +1545,12 @@ If they provide correct safe word, say "Identity verified, welcome!" and proceed
           console.log(`OpenAI: ${response.type}`);
         }
 
+        // PERMANENT: surface failed responses (e.g. quota, auth errors)
+        if (response.type === 'response.done' && response.response?.status === 'failed') {
+          const err = response.response.status_details?.error || {};
+          console.error(`🔴 Twilio FAILED RESPONSE: ${err.type || 'unknown'} — ${err.message || JSON.stringify(response.response.status_details)}`);
+        }
+
         // Audio to Twilio
         if ((response.type === 'response.audio.delta' || response.type === 'response.output_audio.delta') && response.delta) {
           isAiSpeaking = true;
@@ -1840,6 +1846,12 @@ fastify.register(async (fastify) => {
 
         if (LOG_EVENT_TYPES.includes(response.type)) {
           console.log(`Direct OpenAI: ${response.type}`);
+        }
+
+        // PERMANENT: surface failed responses (e.g. quota, auth errors)
+        if (response.type === 'response.done' && response.response?.status === 'failed') {
+          const err = response.response.status_details?.error || {};
+          console.error(`🔴 Direct FAILED RESPONSE: ${err.type || 'unknown'} — ${err.message || JSON.stringify(response.response.status_details)}`);
         }
 
         // Audio from OpenAI → decode base64 PCM16 → send as binary to browser

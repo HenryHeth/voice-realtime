@@ -1,4 +1,13 @@
-[dotenv@17.2.3] injecting env (14) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
-Loaded 22 call history entries
-Henry III Voice Server (cache-enabled) on port 6060
-WebSocket: wss://voice.heth.ca/media-stream
+[dotenv@17.2.3] injecting env (14) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+Loaded 31 call history entries
+Error: listen EADDRINUSE: address already in use 0.0.0.0:6060
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at node:net:2206:7
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '0.0.0.0',
+  port: 6060
+}
