@@ -232,5 +232,23 @@
     "duration": 400,
     "caller": "direct-web",
     "transcriptLines": 29
+  },
+  {
+    "timestamp": "2026-02-24T20:55:01.332Z",
+    "duration": 381,
+    "caller": "+16047637285",
+    "transcriptLines": 63
+  },
+  {
+    "timestamp": "2026-02-24T23:00:09.274Z",
+    "duration": 105,
+    "caller": "+16047637285",
+    "transcriptLines": 22
+  },
+  {
+    "timestamp": "2026-02-24T23:32:36.546Z",
+    "duration": 1054,
+    "caller": "direct-web",
+    "transcriptLines": 112
   }
 ]
